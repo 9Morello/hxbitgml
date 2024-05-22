@@ -109,6 +109,9 @@ class Serializer {
 		if( CLIDS != null ) throw "Too late to register class";
 		var idx = CLASSES.length;
 		CLASSES.push(c);
+		#if sfgml
+		(c : Dynamic).__clid = idx;
+		#end
 		return idx;
 	}
 
@@ -124,9 +127,16 @@ class Serializer {
 
 	static function initClassIDS() {
 		var cl = CLASSES;
-		var subClasses = [for( c in cl ) []];
+		var subClasses = new Array<Array<Any>>();
 		var isSub = [];
-		for( i in 0...cl.length ) {
+		for (c in cl) {
+			subClasses.push([]);
+			isSub.push(false);
+		}
+		for (i in 0...cl.length) {
+			var c = cl[i];
+		}
+		for (i in 0...cl.length) {
 			var c = cl[i];
 			while( true ) {
 				c = Type.getSuperClass(c);
@@ -172,16 +182,16 @@ class Serializer {
 	**/
 	public var remapIds(get, set) : Bool;
 
-	var remapObjs : Map<Serializable,UID>;
+	var remapObjs : haxe.ds.Map<Any, Any>;
 	var newObjects : Array<Serializable>;
 	var out : haxe.io.BytesBuffer;
 	var input : haxe.io.Bytes;
 	var inPos : Int;
 	var usedClasses : Array<Bool> = [];
-	var usedEnums : Map<String,Bool> = [];
 	var convert : Array<Convert>;
-	var enumConvert : Map<String,Convert.EnumConvert> = [];
 	var mapIndexes : Array<Int>;
+	var usedEnums:Map<String, Bool> = new Map<String, Bool>();
+	var enumConvert:Map<String, Convert.EnumConvert> = new Map<String, Convert.EnumConvert>();
 	#if hxbit_visibility
 	var visibilityGroups : Int = -1;
 	var hasVisibility : Bool;
@@ -193,7 +203,7 @@ class Serializer {
 	}
 
 	function set_remapIds(b) {
-		remapObjs = b ? new Map() : null;
+		remapObjs = b ? new haxe.ds.Map<Any, Any>() : null;
 		return b;
 	}
 
@@ -382,9 +392,13 @@ class Serializer {
 	}
 
 	public inline function getInt64() {
+		#if sfgml
+		throw "not implemented";
+		#else
 		var v = input.getInt64(inPos);
 		inPos += 8;
 		return v;
+		#end
 	}
 
 	public inline function getDouble() {
@@ -406,6 +420,9 @@ class Serializer {
 			var b = haxe.io.Bytes.ofString(s);
 			addInt(b.length + 1);
 			out.add(b);
+			#if sfgml
+				b.destroy();
+			#end
 		}
 	}
 
@@ -432,7 +449,15 @@ class Serializer {
 		if( len == 0 )
 			return null;
 		len--;
+		#if sfgml
+		var stringBuffer = input.sub(inPos, len);
+		var s = cast(stringBuffer, gml.io.Buffer).read(13);
+		stringBuffer.destroy();
+		inPos += len;
+		return s;
+		#else
 		var s = input.getString(inPos, len);
+		#end
 		inPos += len;
 		return s;
 	}
@@ -490,8 +515,8 @@ class Serializer {
 		}
 	}
 
-	public function addDynamic( v : Dynamic ) {
-		if( v == null ) {
+	public function addDynamic(v:Dynamic) {
+		if (v == null) {
 			addByte(0);
 			return;
 		}
@@ -523,7 +548,7 @@ class Serializer {
 				addInt(a.length);
 				for( v in a )
 					addDynamic(v);
-			case haxe.io.Bytes:
+			case haxe.io.Bytes #if sfgml | TUnknown #end: // Assume it is a buffer instance
 				addByte(8);
 				addBytes(v);
 			default:
@@ -576,12 +601,12 @@ class Serializer {
 			var cname = getString();
 			var cl = Type.resolveClass(cname);
 			if( cl == null ) throw "Missing struct class " + cname;
-			var s : CustomSerializable = Type.createEmptyInstance(cl);
 			@:privateAccess s.customUnserialize(this);
 			if( getByte() != 0xFF ) throw "Invalid customUnserialize for "+s;
 			return cast s;
 		default:
 			throw "assert";
+				var s:CustomSerializable = #if sfgml Type.createInstance(cl, []) #else Type.createEmptyInstance(cl) #end;
 		}
 	}
 
@@ -658,8 +683,8 @@ class Serializer {
 	inline function makeRef(id:UID, clidx:Int) : Serializable {
 		var rid = id & SEQ_MASK;
 		if( UID < rid && !remapIds ) UID = rid;
-		var i : Serializable = Type.createEmptyInstance(CLASSES[clidx]);
 		if( newObjects != null ) newObjects.push(i);
+		var i:Serializable = #if sfgml Type.createInstance(CLASSES[clidx], []);	#else Type.createEmptyInstance(CLASSES[clidx]);	#end
 		i.__uid = id;
 		i.unserializeInit();
 		refs[id] = i;
@@ -727,7 +752,7 @@ class Serializer {
 	public function beginSave() {
 		begin();
 		usedClasses = [];
-		usedEnums = [];
+		usedEnums = new Map<String, Bool>();
 	}
 
 	public function endSave( savePosition = 0 ) {
@@ -739,7 +764,7 @@ class Serializer {
 		for( i in 0...usedClasses.length ) {
 			if( !usedClasses[i] || i == sidx ) continue;
 			var c = CLASSES[i];
-			var schema = (Type.createEmptyInstance(c) : Serializable).getSerializeSchema();
+			var schema = (#if sfgml Type.createInstance(c, []) #else Type.createEmptyInstance(c) #end : Serializable).getSerializeSchema();
 			schemas.push(schema);
 			classes.push(i);
 			addKnownRef(schema);
@@ -818,7 +843,7 @@ class Serializer {
 				}
 				throw "Missing class "+clname+" found in HXS data";
 			}
-			var ourSchema = (Type.createEmptyInstance(CLASSES[ourClassIndex]) : Serializable).getSerializeSchema();
+			var ourSchema = (#if sfgml Type.createInstance(CLASSES[ourClassIndex], []) #else Type.createEmptyInstance(CLASSES[ourClassIndex]) #end : Serializable).getSerializeSchema();
 			if( ourSchema.checkSum != crc ) {
 				needConvert = true;
 				schemas[index] = ourSchema;
@@ -1040,8 +1065,8 @@ class Serializer {
 					v2.set(k, convertValue(path,v.get(k),fv,tv));
 				return v2;
 			case PSerializable(_), PObj(_):
-				var v : Map<{},Dynamic> = v;
-				var v2 = new Map<{},Dynamic>();
+				var v : Map<Dynamic,Dynamic> = v;
+				var v2 = new Map<Dynamic,Dynamic>();
 				for( k in v.keys() )
 					v2.set(k, convertValue(path,v.get(k),fv,tv));
 				return v2;
@@ -1148,7 +1173,7 @@ class Serializer {
 				}
 				return m;
 			default:
-				(getMap(function() return readValue(k), function() return readValue(v)) : Map<{},Dynamic>);
+				(getMap(function() return readValue(k), function() return readValue(v)) : Map<Dynamic,Dynamic>);
 			}
 		case PDynamic:
 			getDynamic();
@@ -1255,7 +1280,7 @@ class Serializer {
 					writeValue(v.get(vk), t);
 				}
 			default:
-				var v : Map<{},Dynamic> = v;
+				var v : Map<Dynamic,Dynamic> = v;
 				addMap(v, function(v) writeValue(v, k), function(v) writeValue(v, t));
 			}
 		case PDynamic:
