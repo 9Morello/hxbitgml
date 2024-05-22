@@ -1382,8 +1382,8 @@ class Macros {
 						access : [AStatic],
 						pos : pos,
 						kind : FFun( {
-							args : [{ name : "ctx", type : macro : hxbit.Serializer },{ name : "v", type : pt.toComplexType() }],
-							expr : macro @:privateAccess if( v == null ) ctx.addByte(0) else ${{ expr : ESwitch(macro v,cases,null), pos : pos }},
+							args : [{ name : "ctx", type : macro : hxbit.Serializer },{ name : "__aV", type : pt.toComplexType() }],
+							expr : macro @:privateAccess if( __aV == null ) ctx.addByte(0) else ${{ expr : ESwitch(macro __aV,cases,null), pos : pos }},
 							ret : macro : Void,
 						}),
 					},{
@@ -1415,8 +1415,7 @@ class Macros {
 						}),
 					},{
 						name : "serialize",
-						access : [AInline, APublic],
-						meta : [{name:":extern",pos:pos}],
+						access : [AInline, APublic, AExtern],
 						pos : pos,
 						kind : FFun( {
 							args : [{ name : "ctx", type : macro : hxbit.Serializer },{ name : "v", type : pt.toComplexType() }],
@@ -1425,8 +1424,7 @@ class Macros {
 						}),
 					},{
 						name : "unserialize",
-						access : [AInline, APublic],
-						meta : [{name:":extern",pos:pos}],
+						access : [AInline, APublic, AExtern],
 						pos : pos,
 						kind : FFun( {
 							args : [{ name : "ctx", type : macro : hxbit.Serializer }],

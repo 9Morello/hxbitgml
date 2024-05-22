@@ -133,7 +133,7 @@ class Convert {
 			switch( k ) {
 			case PInt: new Map<Int,Dynamic>();
 			case PString: new Map<String,Dynamic>();
-			default: new Map<{},Dynamic>();
+			default: new Map<Any,Dynamic>();
 			}
 		case PVector(_): new haxe.ds.Vector<Dynamic>(0);
 		case PBool: false;

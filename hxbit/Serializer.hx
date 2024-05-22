@@ -391,7 +391,7 @@ class Serializer {
 		return v;
 	}
 
-	public inline function getInt64() {
+	public inline function getInt64():haxe.Int64 {
 		#if sfgml
 		throw "not implemented";
 		#else
@@ -548,9 +548,11 @@ class Serializer {
 				addInt(a.length);
 				for( v in a )
 					addDynamic(v);
-			case haxe.io.Bytes #if sfgml | TUnknown #end: // Assume it is a buffer instance
+			#if !sfgml
+			case haxe.io.Bytes:
 				addByte(8);
 				addBytes(v);
+			#end
 			default:
 				if( Std.isOfType(v,Serializable) ) {
 					addByte(9);
@@ -558,6 +560,11 @@ class Serializer {
 				} else
 					throw "Unsupported dynamic " + c;
 			}
+		#if sfgml
+		case TUnknown: // Assume it is a buffer instance
+			addByte(8);
+			addBytes(v);
+		#end
 		case TEnum(e):
 			var ename = e.getName();
 			var ser : Dynamic = getEnumClass(ename);
@@ -601,12 +608,12 @@ class Serializer {
 			var cname = getString();
 			var cl = Type.resolveClass(cname);
 			if( cl == null ) throw "Missing struct class " + cname;
+			var s:CustomSerializable = #if sfgml Type.createInstance(cl, []) #else Type.createEmptyInstance(cl) #end;
 			@:privateAccess s.customUnserialize(this);
 			if( getByte() != 0xFF ) throw "Invalid customUnserialize for "+s;
 			return cast s;
 		default:
 			throw "assert";
-				var s:CustomSerializable = #if sfgml Type.createInstance(cl, []) #else Type.createEmptyInstance(cl) #end;
 		}
 	}
 
@@ -683,8 +690,8 @@ class Serializer {
 	inline function makeRef(id:UID, clidx:Int) : Serializable {
 		var rid = id & SEQ_MASK;
 		if( UID < rid && !remapIds ) UID = rid;
-		if( newObjects != null ) newObjects.push(i);
 		var i:Serializable = #if sfgml Type.createInstance(CLASSES[clidx], []);	#else Type.createEmptyInstance(CLASSES[clidx]);	#end
+		if( newObjects != null ) newObjects.push(i);
 		i.__uid = id;
 		i.unserializeInit();
 		refs[id] = i;
@@ -1173,7 +1180,7 @@ class Serializer {
 				}
 				return m;
 			default:
-				(getMap(function() return readValue(k), function() return readValue(v)) : Map<Dynamic,Dynamic>);
+				(getMap(function() return readValue(k), function() return readValue(v)) : Map<Any,Any>);
 			}
 		case PDynamic:
 			getDynamic();
