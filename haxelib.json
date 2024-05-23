@@ -2,8 +2,8 @@
 	"name" : "hxbitgml",
 	"url" : "https://github.com/9Morello/hxbitgml",
 	"license" : "BSD",
-    "description" : "sfgml-compatible fork of hxbit",
-    "version" : "1.5.0",
+	"description" : "sfgml-compatible fork of hxbit",
+	"version" : "1.5.0",
 	"releasenote" : "",
 	"contributors" : ["gravityWall"],
 	"dependencies" : {}

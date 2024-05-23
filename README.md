@@ -12,9 +12,9 @@ The main use case for this fork is to make exchanging messages between a server 
 
 ```haxe
 enum Message {
-	NewConnection;
+    NewConnection;
     Disconnect;
-	MoveTo(id:String, x:Int, y:Int);
+    MoveTo(id:String, x:Int, y:Int);
     ChatMessage(senderId:String, message:String);
     // and more
 }
