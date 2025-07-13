@@ -90,7 +90,7 @@ class Serializer {
 	static var SEQ : UID = 0;
 	#end
 	static inline var SEQ_BITS = 8;
-	static inline var SEQ_MASK = (-1:UID) >>> SEQ_BITS;
+	static #if (!js || !hxbit64) inline #end var SEQ_MASK = (-1:UID) >>> SEQ_BITS;
 
 	public static function resetCounters() {
 		UID = 0;
@@ -200,6 +200,18 @@ class Serializer {
 
 	public function new() {
 		if( CLIDS == null ) initClassIDS();
+	}
+
+	public inline function getPosition( write : Bool = false ) {
+		return write ? (#if hl @:privateAccess out.pos #else -1 #end) : inPos;
+	}
+
+	public inline function writeToPosition( pos : Int, value : Int ) {
+		if( pos >= 0 ) {
+			#if hl
+			@:privateAccess out.b.setI32(pos, value);
+			#end
+		}
 	}
 
 	function set_remapIds(b) {
@@ -768,12 +780,14 @@ class Serializer {
 		var classes = [], enums = [];
 		var schemas = [];
 		var sidx = CLASSES.indexOf(Schema);
+		var prevUID = UID;
 		for( i in 0...usedClasses.length ) {
 			if( !usedClasses[i] || i == sidx ) continue;
 			var c = CLASSES[i];
 			var schema = (#if sfgml Type.createInstance(c, []) #else Type.createEmptyInstance(c) #end : Serializable).getSerializeSchema();
 			schemas.push(schema);
 			classes.push(i);
+			schema.__uid = 1;
 			addKnownRef(schema);
 			refs.remove(schema.__uid);
 		}
@@ -781,10 +795,12 @@ class Serializer {
 			if( name == "hxbit.PropTypeDesc" ) continue;
 			var schema : hxbit.Schema = (getEnumClass(name) : Dynamic).getSchema();
 			schemas.push(schema);
+			schema.__uid = 1;
 			addKnownRef(schema);
 			refs.remove(schema.__uid);
 			enums.push(name);
 		}
+		UID = prevUID; // restore after schema create
 		var schemaData = end();
 		begin();
 		out.addBytes(content, 0, savePosition);
@@ -1048,6 +1064,8 @@ class Serializer {
 			if( cl == null ) throw "Missing target class "+to;
 			var v2 = #if haxe4 Std.downcast #else Std.instance #end(v, cl);
 			if( v2 != null ) return v2;
+		case [PMap(_)|PArray(_), PArray(_)] if( isEmpty(v,from) ):
+			return [];
 		case [PArray(from),PArray(to)]:
 			var arr : Array<Dynamic> = v;
 			var path = path+"[]";
@@ -1086,10 +1104,32 @@ class Serializer {
 			default:
 				// todo
 			}
+		case [PMap(_)|PArray(_), PMap(k,_)] if( isEmpty(v,from) ):
+			switch( k ) {
+			case PInt: return new Map<Int,Dynamic>();
+			case PString: return new Map<String,Dynamic>();
+			case PEnum(_): return new haxe.ds.EnumValueMap<Dynamic,Dynamic>();
+			case PSerializable(_), PObj(_): new Map<{},Dynamic>();
+			default:
+				// todo
+			}
 		default:
 		}
 
 		throw 'Cannot convert $path($v) from $from to $to';
+	}
+
+	function isEmpty(v:Dynamic,t:Schema.FieldType) {
+		switch( t ) {
+		case PMap(_):
+			var m : haxe.Constraints.IMap<Dynamic,Dynamic> = v;
+			return !m.keys().hasNext();
+		case PArray(_):
+			var a : Array<Dynamic> = v;
+			return a.length == 0;
+		default:
+		}
+		return false;
 	}
 
 	static var ENUM_CLASSES = new Map();

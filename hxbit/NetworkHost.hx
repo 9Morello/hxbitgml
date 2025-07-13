@@ -99,11 +99,9 @@ class NetworkClient {
 		switch( mid ) {
 		case NetworkHost.SYNC:
 			var oid = ctx.getUID();
+			var size = host.isAuth ? ctx.getInt32() : -1;
+			var startPos = ctx.getPosition();
 			var o : hxbit.NetworkSerializable = cast ctx.refs[oid];
-			if( o == null ) {
-				host.logError("Could not sync object", oid);
-				return -1; // discard whole data, might skip some other things
-			}
 			var rawBits = ctx.getInt();
 			var bits1, bits2;
 			switch( rawBits >>> 30 ) {
@@ -117,7 +115,16 @@ class NetworkClient {
 				bits1 = 0;
 				bits2 = rawBits & 0x7FFFFFFF;
 			}
+			if( o == null ) {
+				if( host.isAuth ) {
+					if( size > 0 )
+						return startPos + size;
+				}
+				host.logError("Could not sync object", oid);
+				return -1; // discard whole data, might skip some other things
+			}
 			if( host.isAuth ) {
+				var invalidProp = -1;
 				inline function checkBits( b, offs ) {
 					while( b != 0 ) {
 						var bit = switch( b & -b ) {
@@ -141,7 +148,7 @@ class NetworkClient {
 						}
 						offs += bit;
 						if( !o.networkAllow(SetField, offs, ownerObject) ) {
-							host.logError("Client setting unallowed property " + o.networkGetName(offs) + " on " + o, o.__uid);
+							invalidProp = offs;
 							break;
 						}
 						offs++;
@@ -149,8 +156,13 @@ class NetworkClient {
 					}
 					return b == 0;
 				}
-				if( !checkBits(bits1&0xFFFF,0) || !checkBits(bits1>>>16,16) || !checkBits(bits2&0xFFFF,30) || !checkBits(bits2>>>16,46) )
-					return -1;
+				if( !checkBits(bits1&0xFFFF,0) || !checkBits(bits1>>>16,16) || !checkBits(bits2&0xFFFF,30) || !checkBits(bits2>>>16,46) ) {
+					if( size < 0 ) {
+						host.logError("Client setting unallowed property " + o.networkGetName(invalidProp) + " on " + o, o.__uid);
+						return -1;
+					}
+					return startPos + size;
+				}
 			}
 			if( host.logger != null ) {
 				var props = [];
@@ -224,11 +236,12 @@ class NetworkClient {
 			var o : hxbit.NetworkSerializable = cast ctx.refs[oid];
 			var size = ctx.getInt32();
 			var fid = ctx.getByte();
+			host.rpcObject = o;
 			if( o == null ) {
 				if( size < 0 )
 					throw "RPC on unreferenced object cannot be skip on this platform";
 				if( !host.isAuth )
-					host.logError("RPC " + o.networkGetName(fid,true) + " on unreferenced object", oid);
+					host.logError("RPC @" + fid + " on unreferenced object", oid);
 				ctx.skip(size);
 			} else if( !host.isAuth ) {
 				if( !o.networkRPC(ctx, fid, this) )
@@ -238,9 +251,9 @@ class NetworkClient {
 				o.networkRPC(ctx, fid, this); // ignore result (client made an RPC on since-then removed object - it has been canceled)
 				host.rpcClientValue = null;
 			}
-			if(host.logger != null && o != null) {
+			host.rpcObject = null;
+			if( host.logger != null && o != null )
 				host.logger("RPC < " + host.objStr(o) + " " + o.networkGetName(fid,true));
-			}
 		case NetworkHost.RPC_WITH_RESULT:
 
 			var old = resultID;
@@ -249,11 +262,12 @@ class NetworkClient {
 			var o : hxbit.NetworkSerializable = cast ctx.refs[oid];
 			var size = ctx.getInt32();
 			var fid = ctx.getByte();
+			host.rpcObject = o;
 			if( o == null ) {
 				if( size < 0 )
 					throw "RPC on unreferenced object cannot be skip on this platform";
 				if( !host.isAuth )
-					host.logError("RPC " + o.networkGetName(fid,true) + " on unreferenced object", oid);
+					host.logError("RPC @" + fid + " on unreferenced object", oid);
 				ctx.skip(size);
 				ctx.addByte(NetworkHost.CANCEL_RPC);
 				ctx.addInt(resultID);
@@ -271,6 +285,10 @@ class NetworkClient {
 				}
 				host.rpcClientValue = null;
 			}
+			host.rpcObject = null;
+
+			if( host.logger != null && o != null )
+				host.logger("RPC < " + host.objStr(o) + " " + o.networkGetName(fid,true));
 
 			if( resultID != -1 ) {
 				if( host.checkEOM ) ctx.addByte(NetworkHost.EOM);
@@ -320,7 +338,7 @@ class NetworkClient {
 		case x:
 			error("Unknown message code " + x+" @"+pos+":"+bytes.toHex());
 		}
-		return @:privateAccess ctx.inPos;
+		return ctx.getPosition();
 	}
 
 	function beginRPCResult() {
@@ -451,6 +469,11 @@ class NetworkHost {
 		When a RPC of type Server is performed, this will tell the originating client from the RPC.
 	**/
 	public var rpcClient(get, never) : NetworkClient;
+
+	/**
+		When a RPC is being called, this is the object which received the RPC.
+	**/
+	public var rpcObject : NetworkSerializable;
 
 	public var sendRate : Float = 0.;
 	public var totalSentBytes : Int = 0;
@@ -677,10 +700,7 @@ class NetworkHost {
 		} else
 			ctx.addByte(RPC);
 		ctx.addUID(o.__uid);
-		var position = 0;
-		#if hl
-		position = @:privateAccess ctx.out.pos;
-		#end
+		var position = ctx.getPosition(true);
 		ctx.addInt32(-1);
 		ctx.addByte(id);
 		if( stats != null )
@@ -689,11 +709,10 @@ class NetworkHost {
 	}
 
 	function endRPC( ctx : NetworkSerializer, position : Int ) {
-		#if hl
-		@:privateAccess ctx.out.b.setI32(position, ctx.out.pos - (position + 5));
+		var size = ctx.getPosition(true) - position;
+		ctx.writeToPosition(position, size - 5);
 		if( stats != null )
-			stats.endRPC(@:privateAccess ctx.out.pos - position);
-		#end
+			stats.endRPC(size);
 		if( checkEOM ) ctx.addByte(EOM);
 	}
 
@@ -1110,8 +1129,8 @@ class NetworkHost {
 						var prevGroups : Int = o.__cachedVisibility == null ? 0 : o.__cachedVisibility.get(ctx.currentTarget);
 						var newGroups = @:privateAccess ctx.evalVisibility(o);
 						var mask = o.getVisibilityMask(newGroups);
-						o.__bits1 = bits1 & mask.low;
-						o.__bits2 = bits2 & mask.high;
+						o.__bits1 = bits1 & (mask.low & 0x3FFFFFFF);
+						o.__bits2 = bits2 & (mask >>> 30).low;
 						if( prevGroups != newGroups ) {
 							if( logger != null ) {
 								var groups = [];
@@ -1125,8 +1144,8 @@ class NetworkHost {
 							var activated = newGroups & ~prevGroups;
 							if( activated != 0 ) {
 								var mask = o.getVisibilityMask(activated);
-								o.__bits1 |= mask.low;
-								o.__bits2 |= mask.high;
+								o.__bits1 |= (mask.low & 0x3FFFFFFF);
+								o.__bits2 |= (mask >>> 30).low;
 							}
 							var disabled = prevGroups & ~newGroups;
 							if( disabled != 0 ) {
@@ -1143,7 +1162,10 @@ class NetworkHost {
 				#end
 					ctx.addByte(SYNC);
 					ctx.addUID(o.__uid);
+					var position = ctx.getPosition(true);
+					if( !isAuth ) ctx.addInt32(-1);
 					o.networkFlush(ctx);
+					if( !isAuth ) ctx.writeToPosition(position, ctx.getPosition(true) - (position + 4));
 					if( checkEOM ) ctx.addByte(EOM);
 				#if hxbit_visibility
 				}

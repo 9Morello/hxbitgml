@@ -22,7 +22,7 @@
 package hxbit;
 
 interface ProxyHost {
-	public function networkSetBit( bit : Int ) : Void;
+	public function networkSetBitCond( bit : Int ) : Void;
 }
 
 interface ProxyChild {
@@ -81,6 +81,7 @@ interface NetworkSerializable extends Serializable extends ProxyHost {
 	public function networkRPC( ctx : NetworkSerializer, rpcID : Int, clientResult : NetworkHost.NetworkClient ) : Bool;
 	public function networkAllow( op : Operation, propId : Int, client : NetworkSerializable ) : Bool;
 	public function networkGetName( propId : Int, isRPC : Bool = false ) : String;
+	public function networkSetBit( bit : Int ) : Void;
 
 	#if hxbit_visibility
 	public var __cachedVisibility : Map<hxbit.NetworkSerializable,Int>;
@@ -95,19 +96,19 @@ interface NetworkSerializable extends Serializable extends ProxyHost {
 class BaseProxy implements ProxyHost implements ProxyChild {
 	public var obj : ProxyHost;
 	public var bit : Int;
-	public inline function networkSetBit(_) {
+	@:noCompletion public inline function networkSetBitCond(_) {
 		mark();
 	}
 	public inline function mark() {
-		if( obj != null ) obj.networkSetBit(bit);
+		if( obj != null ) obj.networkSetBitCond(bit);
 	}
-	public inline function bindHost(o, bit) {
+	public function bindHost(o, bit) {
 		if( obj != null && (o != this.obj || bit != this.bit) )
 			throw "Binding proxy twice";
 		this.obj = o;
 		this.bit = bit;
 	}
-	public inline function unbindHost() {
+	public function unbindHost() {
 		this.obj = null;
 	}
 	public static function objToString(o:Dynamic) {
