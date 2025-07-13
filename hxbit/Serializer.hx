@@ -1109,7 +1109,7 @@ class Serializer {
 			case PInt: return new Map<Int,Dynamic>();
 			case PString: return new Map<String,Dynamic>();
 			case PEnum(_): return new haxe.ds.EnumValueMap<Dynamic,Dynamic>();
-			case PSerializable(_), PObj(_): new Map<{},Dynamic>();
+			case PSerializable(_), PObj(_): new Map<Any,Dynamic>();
 			default:
 				// todo
 			}
