@@ -106,7 +106,7 @@ class Macros {
 	/** Generate game-specific property getters, mostly to be used in networkAllow() **/
 	public static var CUSTOM_GETTERS : Array<{name: String, ret: ComplexType, func : {id: Int, name: String, field: Field} -> Dynamic }> = [];
 
-	@:persistent static var SERIALIZABLES : Map<String,String> = [];
+	@:persistent static var SERIALIZABLES : Map<String,String> = new Map<String,String>();
 
 	#if macro
 	public static function markAsSerializable( className : String ) {
